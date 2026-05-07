@@ -26,18 +26,25 @@ TASK_ROUTES = {
     "scholarship-review": "scholarship_review",
 }
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://frontend-six-alpha-29.vercel.app",
+    "https://kairos-and-key.vercel.app",
+]
+
 
 def _cors_origins() -> list[str]:
     configured = os.getenv("CORS_ORIGINS", "")
+    origins = DEFAULT_CORS_ORIGINS.copy()
     if configured.strip():
-        return [origin.strip() for origin in configured.split(",") if origin.strip()]
+        origins.extend(
+            origin.strip() for origin in configured.split(",") if origin.strip()
+        )
 
-    return [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ]
+    return list(dict.fromkeys(origins))
 
 
 def create_app() -> Flask:
