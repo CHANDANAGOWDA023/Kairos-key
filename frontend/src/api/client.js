@@ -1,7 +1,6 @@
-const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(
-  /\/$/,
-  "",
-);
+const API_BASE = (
+  import.meta.env.VITE_API_URL || "https://kairos-and-key-backend.onrender.com"
+).replace(/\/$/, "");
 
 const friendlyErrors = {
   storyDiscovery: "Story discovery could not finish.",
