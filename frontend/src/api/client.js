@@ -1,4 +1,7 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(
+  /\/$/,
+  "",
+);
 
 const friendlyErrors = {
   storyDiscovery: "Story discovery could not finish.",
@@ -17,13 +20,22 @@ const friendlyErrors = {
 };
 
 async function post(endpoint, payload, label) {
-  const response = await fetch(`${API_BASE}/api/${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
+  let response;
+
+  try {
+    response = await fetch(`${API_BASE}/api/${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error(
+      `${friendlyErrors[label] || "AI request failed."} Check that the backend is running and CORS allows this frontend URL.`,
+    );
+  }
 
   if (!response.ok) {
     throw new Error(friendlyErrors[label] || "AI request failed.");

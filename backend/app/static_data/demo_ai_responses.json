@@ -1,5 +1,0 @@
-{
-  "note": "The backend generates mock AI responses in app/services/ai_service.py. This file exists to document that demo mode uses static/mock data only.",
-  "demo_student": "Maya Chen",
-  "ethical_guardrail": "Kairos & Key coaches students; it does not fabricate stories or achievements."
-}

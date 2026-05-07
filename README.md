@@ -1,119 +1,83 @@
 # Kairos & Key
 
-Kairos & Key is a polished demo web application for an ethical AI-powered college admissions essay coaching platform. It behaves like a personal story discovery coach, identity mapper, writing mentor, and admissions strategy assistant, not a simple essay generator.
+Kairos & Key is a full-stack AI college admissions essay coaching demo. It helps students discover authentic stories, preserve their voice, and revise with reflection. It should not fabricate stories, invent achievements, or write dishonest essays.
 
-## Product Philosophy
+## Production Stack
 
-Kairos & Key helps students discover authentic stories, preserve their natural voice, structure essays, and revise with deeper reflection. It should not fabricate stories, invent achievements, or write dishonest essays.
+- Frontend: React + Vite, deployed on Vercel
+- Backend: Flask API, deployed on Render
+- AI: Google Gemini API through the backend only
+- Server: Gunicorn on Render, no Docker required
 
-## Tech Stack
-
-- Frontend: React + Vite, Tailwind CSS, Framer Motion, Lucide React, Recharts, React Router, React Hot Toast
-- Backend: FastAPI, Python, Pydantic, OpenAI Python SDK, CORS enabled
-- Data: static/mock frontend data in `frontend/src/data/` and mock AI response logic in `backend/app/services/ai_service.py`
-
-## Project Structure
+## Folder Structure
 
 ```text
 kairos-and-key/
+  backend/
+    app.py                 # Local Flask launcher: python app.py
+    flask_app.py           # Shared Flask app factory and routes
+    requirements.txt       # Python dependencies
+    runtime.txt            # Render Python version
+    .env.example           # Backend env template, no real secrets
+    app/
+      __init__.py          # Exports Flask app for Render: gunicorn app:app
+      services/
+        ai_service.py      # Gemini integration and mock fallback
   frontend/
     src/
-      components/
-      pages/
-      layouts/
-      data/
-      api/
-      utils/
-  backend/
-    app/
-      main.py
-      routes/
-      services/
-      schemas/
-      static_data/
+      api/client.js        # Uses VITE_API_URL
+    .env.example           # Frontend env template
+    vercel.json            # Vercel SPA routing config
+    package.json
+  render.yaml              # Render Blueprint config
+  DEPLOYMENT.md            # Step-by-step deployment guide
 ```
 
-## Frontend Setup
+## Environment Variables
 
-```bash
-cd frontend
+Backend variables on Render:
+
+```env
+AI_PROVIDER=gemini
+USE_MOCK_AI=false
+GEMINI_API_KEY=your_gemini_key_here
+GEMINI_MODEL=gemini-2.5-flash
+CORS_ORIGINS=https://your-vercel-app.vercel.app
+```
+
+Frontend variable on Vercel:
+
+```env
+VITE_API_URL=https://your-render-service.onrender.com
+```
+
+Never put `GEMINI_API_KEY` in the frontend. The browser should only know the backend URL.
+
+## Local Testing
+
+Backend:
+
+```powershell
+cd "D:\Kairos & Key\kairos-and-key\backend"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+# Edit backend\.env and add your GEMINI_API_KEY
+python app.py
+```
+
+Frontend, in a second terminal:
+
+```powershell
+cd "D:\Kairos & Key\kairos-and-key\frontend"
 npm install
+Copy-Item .env.example .env
 npm run dev
 ```
 
-The frontend runs on `http://localhost:5173` by default.
+Open `http://localhost:5173`.
 
-## Backend Setup
+## Deployment
 
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-The backend runs on `http://localhost:8000` by default.
-
-## Mock Mode
-
-Mock mode works without any API key. Copy `backend/.env.example` to `backend/.env` and keep:
-
-```env
-USE_MOCK_AI=true
-```
-
-If no `OPENAI_API_KEY` is present, the backend automatically returns high-quality mock AI responses.
-
-## OpenAI Mode
-
-To use OpenAI responses through the backend only:
-
-```env
-OPENAI_API_KEY=your_key_here
-AI_PROVIDER=openai
-USE_MOCK_AI=false
-OPENAI_MODEL=gpt-4.1-mini
-```
-
-The frontend never receives or stores the API key. All AI calls go through FastAPI endpoints under `/api`.
-
-## Features
-
-- Landing page with ethical product storytelling
-- Demo Student Dashboard for Maya Chen
-- Story Discovery Engine
-- Hidden Story Detector
-- Life Timeline Visualizer
-- Thematic Threading Map
-- Guided Essay Builder
-- Show, Don't Tell Transformer
-- Cliche Detection System
-- Voice Fingerprint Lab
-- Essay Authenticity Score
-- AI Mock Admissions Officer review
-- University Persona Alignment
-- Multi-Essay Consistency Checker
-- Parent Pressure / Cultural Context Mode
-- Scholarship Essay Optimizer
-- Artifact & Audio Extraction Demo
-- Brainstorming Game
-- What NOT To Write Advisor
-- Final Essay Review Page
-
-## Demo Flow
-
-1. Open the landing page.
-2. Click `Start Story Discovery`.
-3. Answer a reflective prompt.
-4. Review extracted values and essay angles.
-5. Add life events in the timeline.
-6. Build the essay section by section.
-7. Check the voice fingerprint.
-8. Run cliche detection.
-9. Get admissions officer feedback.
-10. Check university alignment.
-
-## Ethical AI Note
-
-Kairos & Key is a coaching tool. It helps students express their own experiences and ideas. It should not fabricate stories, invent achievements, or write dishonest essays.
+Full beginner-friendly instructions are in [DEPLOYMENT.md](DEPLOYMENT.md).

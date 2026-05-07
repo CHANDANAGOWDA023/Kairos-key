@@ -1,14 +1,16 @@
 import json
 import os
 from typing import Any
+from urllib import error, request
+from urllib.parse import quote
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").lower()
 
 
 SYSTEM_PROMPT = """
@@ -40,6 +42,68 @@ def _use_mock_ai() -> bool:
     return os.getenv("USE_MOCK_AI", "false").lower() in {"1", "true", "yes"}
 
 
+def _provider_api_key_configured() -> bool:
+    if AI_PROVIDER == "gemini":
+        return bool(os.getenv("GEMINI_API_KEY"))
+    return False
+
+
+def _parse_json_content(content: str) -> dict[str, Any]:
+    text = (content or "{}").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return json.loads(text or "{}")
+
+
+def _shape_for_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _shape_for_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        if not value:
+            return []
+        return [_shape_for_value(value[0])]
+    return type(value).__name__
+
+
+def _expected_response_shape(task_type: str, user_input: dict[str, Any] | str) -> dict[str, Any]:
+    sample = mock_response(task_type, user_input).copy()
+    sample.pop("mode", None)
+    sample.pop("input_echo", None)
+    return _shape_for_value(sample)
+
+
+def _unwrap_task_result(task_type: str, result: dict[str, Any]) -> dict[str, Any]:
+    wrapper_keys = {
+        "result",
+        "results",
+        "response",
+        "output",
+        task_type,
+        f"{task_type}_result",
+        f"{task_type}_results",
+    }
+
+    if len(result) == 1:
+        key = next(iter(result))
+        value = result[key]
+        if isinstance(value, dict) and (
+            key in wrapper_keys or key.endswith("_result") or key.endswith("_results")
+        ):
+            return value
+
+    for key in wrapper_keys:
+        value = result.get(key)
+        if isinstance(value, dict):
+            return value
+
+    return result
+
+
 def _primary_text(user_input: dict[str, Any] | str) -> str:
     if isinstance(user_input, str):
         return user_input
@@ -54,49 +118,81 @@ def _primary_text(user_input: dict[str, Any] | str) -> str:
     return json.dumps(user_input, ensure_ascii=True)
 
 
-def call_openai(prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
+def call_gemini(prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict[str, Any]:
+    api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not configured")
-    if AI_PROVIDER != "openai":
+        raise RuntimeError("GEMINI_API_KEY is not configured")
+    if AI_PROVIDER != "gemini":
         raise RuntimeError(f"Unsupported AI_PROVIDER: {AI_PROVIDER}")
 
-    from openai import OpenAI
-
-    client = OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model=OPENAI_MODEL,
-        response_format={"type": "json_object"},
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.6,
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{quote(GEMINI_MODEL, safe='')}:generateContent?key={quote(api_key, safe='')}"
     )
-    content = response.choices[0].message.content or "{}"
-    return json.loads(content)
+    payload = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.6,
+            "responseMimeType": "application/json",
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = request.Request(
+        endpoint,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(req, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini API request failed: {detail}") from exc
+
+    try:
+        content = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"Gemini API returned an unexpected response: {data}") from exc
+
+    return _parse_json_content(content)
+
+
+def call_configured_ai(prompt: str, system_prompt: str = SYSTEM_PROMPT) -> dict[str, Any]:
+    if AI_PROVIDER == "gemini":
+        return call_gemini(prompt, system_prompt)
+    raise RuntimeError(f"Unsupported AI_PROVIDER: {AI_PROVIDER}")
 
 
 def run_ai_task(task_type: str, user_input: dict[str, Any] | str) -> dict[str, Any]:
-    if _use_mock_ai() or not os.getenv("OPENAI_API_KEY"):
+    if _use_mock_ai() or not _provider_api_key_configured():
         return mock_response(task_type, user_input)
 
+    expected_shape = _expected_response_shape(task_type, user_input)
     prompt = {
         "task": task_type,
         "instructions": TASK_PROMPTS.get(task_type, "Coach the student ethically."),
         "student_input": user_input,
-        "required_style": "Actionable, specific, warm, never dishonest, JSON only.",
+        "required_output": {
+            "style": "Actionable, specific, warm, never dishonest, JSON only.",
+            "top_level_keys": list(expected_shape.keys()),
+            "json_shape": expected_shape,
+            "rule": "Return one JSON object with these top-level keys. Do not wrap it inside another result key.",
+        },
     }
 
     try:
-        result = call_openai(json.dumps(prompt, ensure_ascii=True), SYSTEM_PROMPT)
-        result.setdefault("mode", "openai")
-        result.setdefault("model", OPENAI_MODEL)
+        result = call_configured_ai(json.dumps(prompt, ensure_ascii=True), SYSTEM_PROMPT)
+        result = _unwrap_task_result(task_type, result)
+        result.setdefault("mode", AI_PROVIDER)
+        result.setdefault("model", GEMINI_MODEL)
         return result
     except Exception as exc:
         fallback = mock_response(task_type, user_input)
         fallback["mode"] = "mock_fallback"
-        fallback["warning"] = f"OpenAI call failed, returned mock response: {exc}"
+        fallback["warning"] = f"{AI_PROVIDER} call failed, returned mock response: {exc}"
         return fallback
 
 
